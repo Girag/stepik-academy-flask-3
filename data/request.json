@@ -1,0 +1,26 @@
+[
+    {
+        "goal": "learn",
+        "time": "7-10",
+        "name": "Дима",
+        "phone": "57567676"
+    },
+    {
+        "goal": "work",
+        "time": "1-2",
+        "name": "Коля",
+        "phone": "4345434"
+    },
+    {
+        "goal": "work",
+        "time": "7-10",
+        "name": "Вася",
+        "phone": "4322423"
+    },
+    {
+        "goal": "programming",
+        "time": "5-7",
+        "name": "Иван",
+        "phone": "4434983904"
+    }
+]pip
