@@ -1,11 +1,12 @@
-from flask import Flask, render_template, abort, request, redirect, url_for, session
-from flask_wtf import FlaskForm
-from wtforms import StringField, HiddenField, RadioField, SelectField
-from wtforms.validators import InputRequired
-from flask_wtf.csrf import CSRFProtect, CSRFError
 import json
 import os
 import random
+
+from flask import Flask, render_template, abort, request, redirect, url_for, session
+from flask_wtf import FlaskForm
+from flask_wtf.csrf import CSRFProtect, CSRFError
+from wtforms import StringField, HiddenField, RadioField, SelectField
+from wtforms.validators import InputRequired
 
 app = Flask(__name__)
 csrf = CSRFProtect(app)
@@ -95,30 +96,15 @@ def get_schedule(teacher):
     return schedule
 
 
-def add_booking(weekday, time, teacher, client_name, client_phone):
-    if os.path.isfile("data/booking.json") and os.path.getsize("data/booking.json"):
-        with open("data/booking.json", "r") as f:
+def add_record(data_path, record):
+    try:
+        with open(data_path, "r") as f:
             records = json.load(f)
-        records.append({"day": weekday, "time": time, "teacher": teacher, "name": client_name, "phone": client_phone})
-        with open("data/booking.json", "w") as f:
-            json.dump(records, f, indent=4, ensure_ascii=False)
-    else:
-        record = [{"day": weekday, "time": time, "teacher": teacher, "name": client_name, "phone": client_phone}]
-        with open("data/booking.json", "w") as f:
-            json.dump(record, f, indent=4, ensure_ascii=False)
-
-
-def add_request(goal, time, client_name, client_phone):
-    if os.path.isfile("data/request.json") and os.path.getsize("data/request.json"):
-        with open("data/request.json", "r") as f:
-            records = json.load(f)
-        records.append({"goal": goal, "time": time, "name": client_name, "phone": client_phone})
-        with open("data/request.json", "w") as f:
-            json.dump(records, f, indent=4, ensure_ascii=False)
-    else:
-        record = [{"goal": goal, "time": time, "name": client_name, "phone": client_phone}]
-        with open("data/request.json", "w") as f:
-            json.dump(record, f, indent=4, ensure_ascii=False)
+    except FileNotFoundError:
+        records = []
+    records.append(record)
+    with open(data_path, "w") as f:
+        json.dump(records, f, indent=4, ensure_ascii=False)
 
 
 class BookingForm(FlaskForm):
@@ -241,10 +227,11 @@ def render_request():
         session['request_client_name'] = form.client_name.data
         session['request_client_phone'] = form.client_phone.data
 
-        add_request(session['request_goal'],
-                    session['request_time'],
-                    session['request_client_name'],
-                    session['request_client_phone'])
+        rec = {"goal": session['request_goal'],
+               "time": session['request_time'],
+               "name": session['request_client_name'],
+               "phone": session['request_client_phone']}
+        add_record("data/request.json", rec)
         return redirect(url_for("render_request_done"))
     else:
         return render_template("request.html", form=form)
@@ -273,11 +260,12 @@ def render_booking(teacher_id, day, time):
             session['booking_client_name'] = form.client_name.data
             session['booking_client_phone'] = form.client_phone.data
 
-            add_booking(session['booking_day'],
-                        session['booking_time'],
-                        session['booking_teacher_id'],
-                        session['booking_client_name'],
-                        session['booking_client_phone'])
+            rec = {"day": session['booking_day'],
+                   "time": session['booking_time'],
+                   "teacher": session['booking_teacher_id'],
+                   "name": session['booking_client_name'],
+                   "phone": session['booking_client_phone']}
+            add_record("data/booking.json", rec)
             return redirect(url_for("render_booking_done"))
 
         else:
