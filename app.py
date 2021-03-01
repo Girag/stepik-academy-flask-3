@@ -1,10 +1,9 @@
 import json
-import os
 import random
 
 from flask import Flask, render_template, abort, request, redirect, url_for, session
 from flask_wtf import FlaskForm
-from flask_wtf.csrf import CSRFProtect, CSRFError
+from flask_wtf.csrf import CSRFProtect
 from wtforms import StringField, HiddenField, RadioField, SelectField
 from wtforms.validators import InputRequired
 
@@ -78,10 +77,10 @@ def get_teachers_by_rating():
     return result
 
 
-def get_teachers_by_price(r=False):
+def get_teachers_by_price(reverse=False):
     with open("data/teachers.json") as f:
         teachers = json.load(f)
-    result = sorted(teachers, key=lambda x: x['price'], reverse=r)
+    result = sorted(teachers, key=lambda x: x['price'], reverse=reverse)
     return result
 
 
@@ -142,14 +141,10 @@ def render_not_found(_):
     return "Ничего не нашлось! Вот неудача, отправляйтесь на главную!", 404
 
 
-@app.errorhandler(CSRFError)
-def handle_csrf_error(_):
-    return "И кто это тут у нас про CSRF token забыл?", 400
-
-
 @app.route("/")
 def render_main():
-    goals, teachers = get_goals(), get_six_random_teachers()
+    goals = get_goals()
+    teachers = get_six_random_teachers()
     return render_template("index.html", goals=goals,
                            teachers=teachers)
 
@@ -158,30 +153,29 @@ def render_main():
 def render_all():
     form = SortForm(request.args, meta={'csrf': False})
 
-    if form.validate() or not request.args.to_dict():
-        sort_value = request.args.get("sort")
-        if not sort_value or sort_value == "random":
-            teachers = get_teachers_in_random()
-            return render_template("all.html", form=form,
-                                   teachers=teachers)
-
-        elif sort_value == "by_rating":
-            teachers = get_teachers_by_rating()
-            return render_template("all.html", form=form,
-                                   teachers=teachers)
-
-        elif sort_value == "expensive_first":
-            teachers = get_teachers_by_price(True)
-            return render_template("all.html", form=form,
-                                   teachers=teachers)
-
-        elif sort_value == "cheap_first":
-            teachers = get_teachers_by_price()
-            return render_template("all.html", form=form,
-                                   teachers=teachers)
-
-    else:
+    if not form.validate() and request.args.to_dict():
         return redirect(url_for("render_all"))
+
+    sort_value = request.args.get("sort")
+    if not sort_value or sort_value == "random":
+        teachers = get_teachers_in_random()
+        return render_template("all.html", form=form,
+                               teachers=teachers)
+
+    elif sort_value == "by_rating":
+        teachers = get_teachers_by_rating()
+        return render_template("all.html", form=form,
+                               teachers=teachers)
+
+    elif sort_value == "expensive_first":
+        teachers = get_teachers_by_price(reverse=True)
+        return render_template("all.html", form=form,
+                               teachers=teachers)
+
+    elif sort_value == "cheap_first":
+        teachers = get_teachers_by_price()
+        return render_template("all.html", form=form,
+                               teachers=teachers)
 
 
 @app.route("/goals/<goal>/")
@@ -201,7 +195,8 @@ def render_goals(goal):
 
 @app.route("/profiles/<int:teacher_id>/")
 def render_profiles(teacher_id):
-    goals, teachers = get_goals(), get_teachers()
+    goals = get_goals()
+    teachers = get_teachers()
 
     try:
         schedule = get_schedule(teachers[teacher_id])
@@ -217,73 +212,76 @@ def render_profiles(teacher_id):
 def render_request():
     form = RequestForm(goal="travel", time="5-7")
 
-    if form.validate_on_submit():
-        goal_choices = dict(form.goal.choices)
-        time_choices = dict(form.time.choices)
-        session['request_goal'] = form.goal.data
-        session['request_goal_label'] = goal_choices[form.goal.data]
-        session['request_time'] = form.time.data
-        session['request_time_label'] = time_choices[form.time.data]
-        session['request_client_name'] = form.client_name.data
-        session['request_client_phone'] = form.client_phone.data
-
-        rec = {"goal": session['request_goal'],
-               "time": session['request_time'],
-               "name": session['request_client_name'],
-               "phone": session['request_client_phone']}
-        add_record("data/request.json", rec)
-        return redirect(url_for("render_request_done"))
-    else:
+    if not form.validate_on_submit():
         return render_template("request.html", form=form)
+
+    goal_choices = dict(form.goal.choices)
+    time_choices = dict(form.time.choices)
+    session['request'] = {
+        "goal": form.goal.data,
+        "goal_label": goal_choices[form.goal.data],
+        "time": form.time.data,
+        "time_label": time_choices[form.time.data],
+        "client_name": form.client_name.data,
+        "client_phone": form.client_phone.data
+    }
+
+    rec = {"goal": session['request']['goal'],
+           "time": session['request']['time'],
+           "name": session['request']['client_name'],
+           "phone": session['request']['client_phone']}
+    add_record("data/request.json", rec)
+    return redirect(url_for("render_request_done"))
 
 
 @app.route("/request_done/")
 def render_request_done():
-    return render_template("request_done.html", goal=session['request_goal_label'],
-                           time=session['request_time_label'],
-                           name=session['request_client_name'],
-                           phone=session['request_client_phone'])
+    return render_template("request_done.html", goal=session['request']['goal_label'],
+                           time=session['request']['time_label'],
+                           name=session['request']['client_name'],
+                           phone=session['request']['client_phone'])
 
 
 @app.route("/booking/<int:teacher_id>/<day>/<time>/", methods=["GET", "POST"])
 def render_booking(teacher_id, day, time):
-    # return f"Здесь будет форма бронирования преподавателя {teacher_id} на день недели {day} и время {time}"
-    goals, teacher = get_goals(), get_teacher_by_id(teacher_id)
+    teacher = get_teacher_by_id(teacher_id)
     schedule = get_schedule(teacher)
 
-    if schedule.get(days[day][1]) and f"{time}:00" in schedule.get(days[day][1]):
-        form = BookingForm()
-        if form.validate_on_submit():
-            session['booking_day'] = form.weekday.data
-            session['booking_time'] = form.time.data
-            session['booking_teacher_id'] = form.teacher.data
-            session['booking_client_name'] = form.client_name.data
-            session['booking_client_phone'] = form.client_phone.data
+    if not schedule.get(days[day][1]) or f"{time}:00" not in schedule.get(days[day][1]):
+        abort(404)
 
-            rec = {"day": session['booking_day'],
-                   "time": session['booking_time'],
-                   "teacher": session['booking_teacher_id'],
-                   "name": session['booking_client_name'],
-                   "phone": session['booking_client_phone']}
-            add_record("data/booking.json", rec)
-            return redirect(url_for("render_booking_done"))
+    form = BookingForm()
+    if not form.validate_on_submit():
+        return render_template("booking.html", form=form,
+                               teacher=teacher,
+                               days=days,
+                               day=day,
+                               time=time)
 
-        else:
-            return render_template("booking.html", form=form,
-                                   teacher=teacher,
-                                   days=days,
-                                   day=day,
-                                   time=time)
-    abort(404)
+    session['booking'] = {
+        "day": form.weekday.data,
+        "time": form.time.data,
+        "teacher_id": form.teacher.data,
+        "client_name": form.client_name.data,
+        "client_phone": form.client_phone.data
+    }
+
+    rec = {"day": session['booking']['day'],
+           "time": session['booking']['time'],
+           "teacher": session['booking']['teacher_id'],
+           "name": session['booking']['client_name'],
+           "phone": session['booking']['client_phone']}
+    add_record("data/booking.json", rec)
+    return redirect(url_for("render_booking_done"))
 
 
 @app.route("/booking_done/")
 def render_booking_done():
     return render_template("booking_done.html", days=days,
-                           day=session['booking_day'],
-                           time=session['booking_time'],
-                           name=session['booking_client_name'],
-                           phone=session['booking_client_phone'])
+                           day=session['booking']['day'],
+                           time=session['booking']['time'],
+                           name=session['booking']['client_name'],
+                           phone=session['booking']['client_phone'])
 
 
 if __name__ == '__main__':
